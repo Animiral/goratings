@@ -19,7 +19,12 @@ class EGFGameData:
         if not os.path.exists(sqlite_filename) and os.path.exists("../" + sqlite_filename):
             sqlite_filename = "../" + sqlite_filename
 
-        self._conn = sqlite3.connect(sqlite_filename)
+        try:
+            self._conn = sqlite3.connect(sqlite_filename)
+        except sqlite3.Error as e:
+            print(f"SQL error: {e}")
+            self._conn = None
+
         self.quiet = quiet
 
     def __iter__(self) -> Iterator[GameRecord]:
