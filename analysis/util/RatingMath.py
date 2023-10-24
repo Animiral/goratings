@@ -65,6 +65,9 @@ linear = cli.add_argument_group("linear ranking variables", "rating to ranks con
 linear.add_argument("-m", dest="m", type=float, default=100.0, help="m")
 linear.add_argument("-b", dest="b", type=float, default=9.0, help="b")
 
+cli.add_argument(
+    "--mass-timeout-rule", dest="mass_timeout_rule", type=bool, default=True, help="If set, ignore consecutive correspondence timeout losses",
+)
 
 _rank_to_rating: Callable[[float], float]
 _rating_to_rank: Callable[[float], float]

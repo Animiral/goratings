@@ -15,14 +15,21 @@ from analysis.util import (
 from goratings.interfaces import GameRecord, RatingSystem, Storage
 from goratings.math.glicko2 import Glicko2Entry, glicko2_update
 
+cli.add_argument(
+    "--analysis-outfile", type=str, dest="analysis_outfile", default=None, help="Dump rating updates for every game to this file as CSV",
+)
 
 class OneGameAtATime(RatingSystem):
-    _storage: Storage,
+    _storage: Storage
     _massTimeoutRule: bool
 
-    def __init__(self, storage: Storage, massTimeoutRule: bool = True) -> None:
+    def __init__(self, storage: Storage, massTimeoutRule: bool = True, outfile: str = None) -> None:
         self._storage = storage
         self._massTimeoutRule = massTimeoutRule
+        if outfile:
+            self._outfile = open(outfile, "w")
+            self._outfile.write("GameId,Black,White,WhiteWinrate,BlackRating,BlackDeviation,BlackVolatility,WhiteRating,WhiteDeviation,WhiteVolatility\n")
+
 
     def process_game(self, game: GameRecord) -> Glicko2Analytics:
         if game.black_manual_rank_update is not None:
@@ -67,16 +74,20 @@ class OneGameAtATime(RatingSystem):
         self._storage.set(game.white_id, updated_white)
         #self._storage.add_rating_history(game.black_id, game.ended, updated_black)
         #self._storage.add_rating_history(game.white_id, game.ended, updated_white)
-
-        return Glicko2Analytics(
-            skipped=False,
-            game=game,
-            expected_win_rate=black.expected_win_probability(
+        expected_win_rate=black.expected_win_probability(
                 white, get_handicap_adjustment(black.rating, game.handicap,
                                                komi=game.komi, size=game.size,
                                                rules=game.rules,
                     ), ignore_g=True
-            ),
+            )
+
+        if self._outfile:
+            self._outfile.write(f"{game_id},{game.black_id},{game.white_id},{expected_win_rate},{updated_black.rating},{updated_black.deviation},{updated_black.volatility},{updated_white.rating},{updated_white.deviation},{updated_white.volatility}\n")
+
+        return Glicko2Analytics(
+            skipped=False,
+            game=game,
+            expected_win_rate=expected_win_rate,
             black_rating=black.rating,
             white_rating=white.rating,
             black_deviation=black.deviation,
@@ -87,19 +98,23 @@ class OneGameAtATime(RatingSystem):
             white_updated_rating=updated_white.rating,
         )
 
+    def finish(self):
+        if self._outfile:
+            self._outfile.close()
 
 
 # Run
 config(cli.parse_args(), "glicko2-one-game-at-a-time")
 game_data = GameData()
 storage = InMemoryStorage(Glicko2Entry)
-engine = OneGameAtATime(storage)
+engine = OneGameAtATime(storage, config.args.mass_timeout_rule, config.args.analysis_outfile)
 tally = TallyGameAnalytics(storage)
 
 for game in game_data:
     analytics = engine.process_game(game)
     tally.add_glicko2_analytics(analytics)
 
+engine.finish()
 tally.print()
 
 self_reported_ratings = tally.get_self_reported_rating()
