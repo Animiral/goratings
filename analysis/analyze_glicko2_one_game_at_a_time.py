@@ -17,10 +17,12 @@ from goratings.math.glicko2 import Glicko2Entry, glicko2_update
 
 
 class OneGameAtATime(RatingSystem):
-    _storage: Storage
+    _storage: Storage,
+    _massTimeoutRule: bool
 
-    def __init__(self, storage: Storage) -> None:
+    def __init__(self, storage: Storage, massTimeoutRule: bool = True) -> None:
         self._storage = storage
+        self._massTimeoutRule = massTimeoutRule
 
     def process_game(self, game: GameRecord) -> Glicko2Analytics:
         if game.black_manual_rank_update is not None:
@@ -29,7 +31,7 @@ class OneGameAtATime(RatingSystem):
         if game.white_manual_rank_update is not None:
             self._storage.set(game.white_id, Glicko2Entry(rank_to_rating(game.white_manual_rank_update)))
 
-        if should_skip_game(game, self._storage):
+        if self._massTimeoutRule and should_skip_game(game, self._storage):
             return Glicko2Analytics(skipped=True, game=game)
 
         black = self._storage.get(game.black_id)
