@@ -14,6 +14,7 @@ from analysis.util import (
 )
 from goratings.interfaces import GameRecord, RatingSystem, Storage
 from goratings.math.glicko2 import Glicko2Entry, glicko2_update
+import csv
 
 cli.add_argument(
     "--analysis-outfile", type=str, dest="analysis_outfile", default=None, help="Dump rating updates for every game to this file as CSV",
@@ -22,14 +23,16 @@ cli.add_argument(
 class OneGameAtATime(RatingSystem):
     _storage: Storage
     _massTimeoutRule: bool
+    _writer: csv.DictWriter
 
     def __init__(self, storage: Storage, massTimeoutRule: bool = True, outfile: str = None) -> None:
         self._storage = storage
         self._massTimeoutRule = massTimeoutRule
         if outfile:
             self._outfile = open(outfile, "w")
-            self._outfile.write("GameId,Black,White,WhiteWinrate,BlackRating,BlackDeviation,BlackVolatility,WhiteRating,WhiteDeviation,WhiteVolatility\n")
-
+            fieldnames = ['GameId','PredictedScore','BlackRating','BlackDeviation','BlackVolatility','WhiteRating','WhiteDeviation','WhiteVolatility']
+            self._writer = csv.DictWriter(self._outfile, fieldnames=fieldnames)
+            self._writer.writeheader()
 
     def process_game(self, game: GameRecord) -> Glicko2Analytics:
         if game.black_manual_rank_update is not None:
@@ -81,8 +84,16 @@ class OneGameAtATime(RatingSystem):
                     ), ignore_g=True
             )
 
-        if self._outfile:
-            self._outfile.write(f"{game_id},{game.black_id},{game.white_id},{expected_win_rate},{updated_black.rating},{updated_black.deviation},{updated_black.volatility},{updated_white.rating},{updated_white.deviation},{updated_white.volatility}\n")
+        if self._writer:
+            row = {'GameId': game.game_id,
+                   'PredictedScore': expected_win_rate,
+                   'BlackRating': updated_black.rating,
+                   'BlackDeviation': updated_black.deviation,
+                   'BlackVolatility': updated_black.volatility,
+                   'WhiteRating': updated_white.rating,
+                   'WhiteDeviation': updated_white.deviation,
+                   'WhiteVolatility': updated_white.volatility}
+            self._writer.writerow(row)
 
         return Glicko2Analytics(
             skipped=False,

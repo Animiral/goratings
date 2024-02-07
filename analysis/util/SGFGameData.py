@@ -76,6 +76,7 @@ class SGFGameData:
         time = root_node.get('TM')
         overtime = get_or_default(root_node, 'OT', None)
         time_per_move = sec_per_move(overtime)
+        rules = root_node.get('RU')
 
         # filters
         if self.size and size != self.size:
@@ -100,16 +101,16 @@ class SGFGameData:
             white_id = len(self.players)
             self.players[player_white] = white_id
 
-        if 'B' in result:
+        if 'B' in result or '1' == result:
             winner_id = black_id
-        elif 'W' in result:
+        elif 'W' in result or '0' == result:
             winner_id = white_id
         else:
             winner_id = -1
 
         record = GameRecord(
-            # id, size, handicap, komi, black_id, white_id, time_per_move, timeout, winner_id, ended
-            game_id, size, handicap, komi, black_id, white_id, time_per_move, 'T' in result, winner_id, game_id
+            # id, size, handicap, komi, black_id, white_id, time_per_move, timeout, winner_id, ended, rules
+            game_id, size, handicap, komi, black_id, white_id, time_per_move, 'T' in result, winner_id, game_id, rules
         )
         self.data.append(record)
 
@@ -126,7 +127,7 @@ class SGFGameData:
             with open(path, "r") as f:
                 firstline = True
                 while True:
-                    line = f.readline()
+                    line = f.readline().strip()
                     if "" == line:
                         break
                     comma = line.find(',')
