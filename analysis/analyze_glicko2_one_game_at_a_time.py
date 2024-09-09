@@ -30,7 +30,8 @@ class OneGameAtATime(RatingSystem):
         self._massTimeoutRule = massTimeoutRule
         if outfile:
             self._outfile = open(outfile, "w")
-            fieldnames = ['GameId','PredictedScore','BlackRating','BlackDeviation','BlackVolatility','WhiteRating','WhiteDeviation','WhiteVolatility']
+            fieldnames = ['GameId','PredictedScore','PredictedBlackRating','PredictedWhiteRating',
+                          'BlackRating','BlackDeviation','BlackVolatility','WhiteRating','WhiteDeviation','WhiteVolatility']
             self._writer = csv.DictWriter(self._outfile, fieldnames=fieldnames)
             self._writer.writeheader()
 
@@ -46,6 +47,15 @@ class OneGameAtATime(RatingSystem):
 
         black = self._storage.get(game.black_id)
         white = self._storage.get(game.white_id)
+
+        black_rating = black.rating
+        white_rating = white.rating
+        expected_win_rate=black.expected_win_probability(
+                white, get_handicap_adjustment(black.rating, game.handicap,
+                                               komi=game.komi, size=game.size,
+                                               rules=game.rules,
+                    )
+            )
 
         updated_black = glicko2_update(
             black,
@@ -77,16 +87,12 @@ class OneGameAtATime(RatingSystem):
         self._storage.set(game.white_id, updated_white)
         #self._storage.add_rating_history(game.black_id, game.ended, updated_black)
         #self._storage.add_rating_history(game.white_id, game.ended, updated_white)
-        expected_win_rate=black.expected_win_probability(
-                white, get_handicap_adjustment(black.rating, game.handicap,
-                                               komi=game.komi, size=game.size,
-                                               rules=game.rules,
-                    ), ignore_g=True
-            )
 
         if self._writer:
             row = {'GameId': game.game_id,
                    'PredictedScore': expected_win_rate,
+                   'PredictedBlackRating': black_rating,
+                   'PredictedWhiteRating': white_rating,
                    'BlackRating': updated_black.rating,
                    'BlackDeviation': updated_black.deviation,
                    'BlackVolatility': updated_black.volatility,

@@ -1,5 +1,6 @@
 import os
 import sys
+import csv
 from time import time
 import re
 from sgfmill import sgf
@@ -14,6 +15,8 @@ fischer_pattern = re.compile(r'(\d+) fischer')
 byoyomi_pattern = re.compile(r'(\d+)x(\d+) byo-yomi')
 simple_pattern = re.compile(r'(\d+) simple')
 valid_result_pattern = re.compile(r'[wWbB]\+[TR\d]')
+pb_pattern = re.compile(r'PB\[(.+?)\]..\[')
+pw_pattern = re.compile(r'PW\[(.+?)\]..\[')
 
 def sec_per_move(overtime):
     """Determine seconds per move from the overtime specification."""
@@ -44,7 +47,7 @@ class SGFGameData:
     """Read games from SGF files"""
     quiet: bool  # print diagnostic or not
     size: int    # filter by board size
-    speed: int   # filter by sec per move
+    speed: int   # filter by sec per move (ignored)
     data: list[GameRecord]  # SGF metadata
     players: dict[str, int]  # players mapped to IDs as we encounter them
 
@@ -57,7 +60,8 @@ class SGFGameData:
 
     def add_file(self, file, result="") -> None:
         with open(file, "rb") as f:
-            game = sgf.Sgf_game.from_bytes(f.read())
+            file_bytes = f.read()
+            game = sgf.Sgf_game.from_bytes(file_bytes)
 
         def get_or_default(sgf_node, identifier, default):
             if sgf_node.has_property(identifier):
@@ -66,14 +70,13 @@ class SGFGameData:
                 return default
 
         root_node = game.get_root()
-        player_white = root_node.get('PW')
-        player_black = root_node.get('PB')
+        player_black, player_white = self._get_player_names(root_node, file_bytes)
         if "" == result:
             result = get_or_default(root_node, 'RE', '')
         size = root_node.get('SZ')
         handicap = int(get_or_default(root_node, 'HA', 0))
         komi = root_node.get('KM')
-        time = root_node.get('TM')
+        # time = root_node.get('TM')
         overtime = get_or_default(root_node, 'OT', None)
         time_per_move = sec_per_move(overtime)
         rules = root_node.get('RU')
@@ -81,13 +84,15 @@ class SGFGameData:
         # filters
         if self.size and size != self.size:
             return
-        if self.speed:
-            if self.speed >= 3:
-                if time_per_move > 0 and time_per_move <= 3600:
-                    return
-            else:
-                if time_per_move == 0 or time_per_move >= 3600:
-                    return
+        # This branch of goratings is used as a reference Glicko implementation for the strength model,
+        # therefore we already have a filtered dataset and do not abide by speed restrictions.
+        # if self.speed:
+        #     if self.speed >= 3:
+        #         if time_per_move > 0 and time_per_move <= 3600:
+        #             return
+        #     else:
+        #         if time_per_move == 0 or time_per_move >= 3600:
+        #             return
 
         game_id = len(self.data)  # sequential, also use as ending timestamp
         if player_black in self.players:
@@ -114,6 +119,18 @@ class SGFGameData:
         )
         self.data.append(record)
 
+    def _get_player_names(self, root_node: sgf.Node, sgfdata: bytes):
+        # Some player names are specified with unescaped backslashes.
+        # Therefore, if both names are not available through sgfmill, extract them by regex.
+        try:
+            player_black = root_node.get('PB')
+            player_white = root_node.get('PW')
+        except KeyError:
+            sgfdata = sgfdata.decode(errors='ignore')
+            player_black = pb_pattern.search(sgfdata)[1]
+            player_white = pw_pattern.search(sgfdata)[1]
+        return player_black, player_white
+
     def add_list_or_dir(self, path):
         """
         Given the path (from command line args), read the specified SGF files.
@@ -124,21 +141,10 @@ class SGFGameData:
         If path points to a directory, traverse it recursively and add all SGF files found.
         """
         if os.path.isfile(path):
-            with open(path, "r") as f:
-                firstline = True
-                while True:
-                    line = f.readline().strip()
-                    if "" == line:
-                        break
-                    comma = line.find(',')
-                    if -1 == comma:
-                        self.add_file(line)
-                    else:
-                        if firstline:
-                            firstline = False
-                            continue
-                        lastcomma = line.rfind(',')
-                        self.add_file(line[:comma], line[lastcomma+1:])  # override game result
+            with open(path, "r") as listfile:
+                reader = csv.DictReader(listfile)
+                for row in reader:
+                    self.add_file(row['File'], row['Score'])  # override game result
         elif os.path.isdir(path):
             for root, dirs, files in os.walk(directory):
                 files.sort() # naming convention must establish order in time

@@ -60,30 +60,16 @@ class Glicko2Entry:
 
         return self
 
-    def expected_win_probability(self, white: "Glicko2Entry", handicap_adjustment: float, ignore_g: bool = False) -> float:
-        # Implementation as defined by: http://www.glicko.net/glicko/glicko.pdf
+    def expected_win_probability(self, white: "Glicko2Entry", handicap_adjustment: float) -> float:
+        # See "Expected outcome of a game" in http://www.glicko.net/glicko/glicko.pdf
         q = 0.0057565
-
-        if not ignore_g:
-            def g(rd: float) -> float:
-                return 1
-        else:
-            def g(rd: float) -> float:
-                return 1 / sqrt(1 + 3 * q ** 2 * (self.deviation ** 2) / pi ** 2)
-
+        g = 1 / sqrt(1 + 3*q**2 * (self.deviation**2 + white.deviation**2) / pi**2)
         E = 1 / (
-            1
-            + (
-                10
-                ** (
-                    -g(sqrt(self.deviation ** 2 + white.deviation ** 2))
-                    * (self.rating + handicap_adjustment - white.rating)
-                    / 400
-                )
+            1 + (
+                10 ** (-g * (self.rating + handicap_adjustment - white.rating) / 400)
             )
         )
         return E
-
 
 def glicko2_update(player: Glicko2Entry, matches: List[Tuple[Glicko2Entry, int]]) -> Glicko2Entry:
     # Implementation as defined by: http://www.glicko.net/glicko/glicko2.pdf
